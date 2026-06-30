@@ -1,0 +1,10 @@
+.*
+!.gitignore
+!.gitkeep
+!.mvn
+!.github
+!.sonarlint
+target
+*.log
+*.iml
+pom.xml.versionsBackup

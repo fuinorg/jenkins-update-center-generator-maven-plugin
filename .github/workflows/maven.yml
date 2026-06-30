@@ -1,0 +1,107 @@
+name: Java Maven Build
+
+on:
+  push:
+    branches:
+      - '**'
+    paths-ignore:
+      - 'README.md'
+      - '**/README.md'
+      - 'CHANGELOG.md'
+      - '**/CHANGELOG.md'
+  pull_request:
+    branches:
+      - '**'
+    paths-ignore:
+      - 'README.md'
+      - '**/README.md'
+      - 'CHANGELOG.md'
+      - '**/CHANGELOG.md'
+
+jobs:
+  build:
+
+    # ubuntu-latest ships with a running (rootful) Docker daemon, which the integration test uses
+    # to start Artifactory and Jenkins via the docker-maven-plugin (default 'bridge' network mode).
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout source
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Set up JDK
+      uses: actions/setup-java@v5
+      with:
+        java-version: '25'
+        distribution: 'zulu'
+        cache: maven
+
+    - name: Show versions
+      run: java -version && ./mvnw -version && docker version
+
+    - name: Cache Maven packages
+      uses: actions/cache@v5
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+
+    # Cache the (large) base images the integration test starts via the docker-maven-plugin, so they
+    # are not re-pulled from the registries on every run. Keyed on the pinned image tags.
+    - name: Cache Docker base images
+      uses: actions/cache@v5
+      with:
+        path: ~/docker-images
+        key: docker-images-artifactory-7.104.14-jenkins-2.504.3-jdk17
+
+    - name: Load or pull Docker base images
+      run: |
+        if ls ~/docker-images/*.tar >/dev/null 2>&1; then
+          echo "Loading cached images..."
+          for f in ~/docker-images/*.tar; do docker load -i "$f"; done
+        else
+          echo "Pulling base images..."
+          mkdir -p ~/docker-images
+          docker pull releases-docker.jfrog.io/jfrog/artifactory-oss:7.104.14
+          docker pull jenkins/jenkins:2.504.3-jdk17
+          docker save releases-docker.jfrog.io/jfrog/artifactory-oss:7.104.14 -o ~/docker-images/artifactory.tar
+          docker save jenkins/jenkins:2.504.3-jdk17 -o ~/docker-images/jenkins-base.tar
+        fi
+
+    - name: Import GPG key
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+      uses: crazy-max/ghaction-import-gpg@v7
+      with:
+        gpg_private_key: ${{ secrets.OSS_SONATYPE_GPG_PRIVATE_KEY }}
+        passphrase: ${{ secrets.OSS_SONATYPE_GPG_PASSPHRASE }}
+
+    - name: Build and verify with Maven
+      if: github.event_name != 'push' || (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop')
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: ./mvnw clean verify -U -B --file pom.xml -s settings.xml
+
+    - name: Build and deploy with Maven
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        OSS_SONATYPE_USERNAME: ${{ secrets.OSS_SONATYPE_USERNAME }}
+        OSS_SONATYPE_TOKEN: ${{ secrets.OSS_SONATYPE_TOKEN }}
+        OSS_SONATYPE_GPG_PASSPHRASE: ${{ secrets.OSS_SONATYPE_GPG_PASSPHRASE }}
+      run: ./mvnw clean deploy -Pcentral-sonatype-release -U -B --file pom.xml -s settings.xml
+
+    # Make the build output downloadable from the Actions run UI (also on failure, e.g. a deploy
+    # error), including the exact flattened POM that gets uploaded to the repository.
+    - name: Upload build artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: |
+          target/*.jar
+          target/central-deferred/**
+          .flattened-pom.xml
+        include-hidden-files: true
+        if-no-files-found: warn

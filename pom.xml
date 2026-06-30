@@ -1,0 +1,423 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+		<groupId>org.fuin</groupId>
+		<artifactId>pom</artifactId>
+		<version>2.0.2</version>
+	</parent>
+
+	<artifactId>jenkins-update-center-generator-maven-plugin</artifactId>
+	<version>1.0.0-SNAPSHOT</version>
+	<packaging>maven-plugin</packaging>
+	<name>Jenkins Update Center Generator Maven Plugin</name>
+	<description>Generates a Jenkins update center layout (update-center.json) for custom plugins hosted on an internal server (Maven Plugin)</description>
+	<url>https://github.com/fuinorg/jenkins-update-center-generator-maven-plugin/</url>
+
+	<scm>
+		<url>https://github.com/fuinorg/jenkins-update-center-generator-maven-plugin/</url>
+		<connection>scm:git:git://github.com/fuinorg/jenkins-update-center-generator-maven-plugin.git</connection>
+		<developerConnection>scm:git:git@github.com:fuinorg/jenkins-update-center-generator-maven-plugin.git</developerConnection>
+	</scm>
+
+	<issueManagement>
+		<system>GitHub Issues</system>
+		<url>https://github.com/fuinorg/jenkins-update-center-generator-maven-plugin/issues</url>
+	</issueManagement>
+
+	<properties>
+
+		<itf.version>0.13.1</itf.version>
+		<jcabi-maven-slf4j.version>0.10</jcabi-maven-slf4j.version>
+		<maven-failsafe-plugin.version>3.5.3</maven-failsafe-plugin.version>
+		<maven-plugin-annotations.version>3.15.1</maven-plugin-annotations.version>
+		<maven-plugin-plugin.version>3.15.1</maven-plugin-plugin.version>
+		<mavenVersion>3.3.9</mavenVersion>
+
+		<jspecify.version>1.0.0</jspecify.version>
+		<fastjson.version>2.0.57</fastjson.version>
+		<bouncycastle.version>1.81</bouncycastle.version>
+		<json-lib.version>2.1-rev6</json-lib.version>
+
+		<junit.version>5.11.4</junit.version>
+		<assertj.version>3.27.3</assertj.version>
+
+		<docker-maven-plugin.version>0.48.1</docker-maven-plugin.version>
+		<flatten-maven-plugin.version>1.6.0</flatten-maven-plugin.version>
+		<!-- Container network mode for the Docker based IT. Default 'bridge' works on (rootful)
+			 Docker as used by CI. Activate the 'podman' profile locally to switch to 'pasta', which
+			 rootless podman tears down cleanly (its bridge teardown fails via the podman API). -->
+		<it.network.mode>bridge</it.network.mode>
+
+	</properties>
+
+	<dependencies>
+
+		<!-- compile -->
+
+		<dependency>
+			<groupId>org.jspecify</groupId>
+			<artifactId>jspecify</artifactId>
+			<version>${jspecify.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.maven</groupId>
+			<artifactId>maven-plugin-api</artifactId>
+			<version>${mavenVersion}</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.maven.plugin-tools</groupId>
+			<artifactId>maven-plugin-annotations</artifactId>
+			<version>${maven-plugin-annotations.version}</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.maven</groupId>
+			<artifactId>maven-core</artifactId>
+			<version>${mavenVersion}</version>
+			<scope>provided</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>com.alibaba</groupId>
+			<artifactId>fastjson</artifactId>
+			<version>${fastjson.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.bouncycastle</groupId>
+			<artifactId>bcpkix-jdk18on</artifactId>
+			<version>${bouncycastle.version}</version>
+		</dependency>
+
+		<!-- The JSON library Jenkins uses to verify update site signatures (Stapler fork of
+			json-lib). Its 'writeCanonical' produces the canonical (key-sorted) JSON over which
+			Jenkins computes the signature digest, so we sign the identical bytes. This Central
+			version produces byte-identical canonical output to the one bundled with Jenkins. -->
+		<dependency>
+			<groupId>org.kohsuke.stapler</groupId>
+			<artifactId>json-lib</artifactId>
+			<version>${json-lib.version}</version>
+		</dependency>
+
+		<!-- Pin json-lib's old transitive dependencies to patched (CVE-free) versions. They are not
+			 used by the canonicalization path, so the signature digest is unaffected. -->
+		<dependency>
+			<groupId>commons-beanutils</groupId>
+			<artifactId>commons-beanutils</artifactId>
+			<version>1.9.4</version>
+		</dependency>
+		<dependency>
+			<groupId>commons-collections</groupId>
+			<artifactId>commons-collections</artifactId>
+			<version>3.2.2</version>
+		</dependency>
+
+		<!-- Test -->
+
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter</artifactId>
+			<version>${junit.version}</version>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.assertj</groupId>
+			<artifactId>assertj-core</artifactId>
+			<version>${assertj.version}</version>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>com.soebes.itf.jupiter.extension</groupId>
+			<artifactId>itf-jupiter-extension</artifactId>
+			<version>${itf.version}</version>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>com.soebes.itf.jupiter.extension</groupId>
+			<artifactId>itf-assertj</artifactId>
+			<version>${itf.version}</version>
+			<scope>test</scope>
+		</dependency>
+
+	</dependencies>
+
+	<build>
+
+		<plugins>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+			</plugin>
+
+			<!-- Deploy a flattened, self-contained POM (parent inlined, explicit groupId/version,
+				 no build/profiles/repositories) so the publishing server can derive the coordinates
+				 and required metadata from the POM file itself. -->
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>flatten-maven-plugin</artifactId>
+				<version>${flatten-maven-plugin.version}</version>
+				<configuration>
+					<flattenMode>oss</flattenMode>
+				</configuration>
+				<executions>
+					<execution>
+						<id>flatten</id>
+						<phase>process-resources</phase>
+						<goals>
+							<goal>flatten</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>flatten.clean</id>
+						<phase>clean</phase>
+						<goals>
+							<goal>clean</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-source-plugin</artifactId>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-javadoc-plugin</artifactId>
+				<configuration>
+					<doclint>none</doclint>
+				</configuration>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-plugin-plugin</artifactId>
+				<version>${maven-plugin-plugin.version}</version>
+				<configuration>
+					<goalPrefix>jenkins-uc</goalPrefix>
+				</configuration>
+				<executions>
+					<execution>
+						<id>default-descriptor</id>
+						<phase>process-classes</phase>
+					</execution>
+					<execution>
+						<id>help-goal</id>
+						<goals>
+							<goal>helpmojo</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<plugin>
+				<groupId>com.soebes.itf.jupiter.extension</groupId>
+				<artifactId>itf-maven-plugin</artifactId>
+				<version>${itf.version}</version>
+				<configuration>
+					<!-- Binary plugin fixtures must not be run through text filtering. -->
+					<nonFilteredFileExtensions>
+						<nonFilteredFileExtension>hpi</nonFilteredFileExtension>
+						<nonFilteredFileExtension>jpi</nonFilteredFileExtension>
+						<nonFilteredFileExtension>key</nonFilteredFileExtension>
+						<nonFilteredFileExtension>crt</nonFilteredFileExtension>
+						<nonFilteredFileExtension>pem</nonFilteredFileExtension>
+					</nonFilteredFileExtensions>
+				</configuration>
+				<executions>
+					<execution>
+						<id>installing</id>
+						<phase>pre-integration-test</phase>
+						<goals>
+							<goal>install</goal>
+							<goal>resources-its</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<version>${maven-failsafe-plugin.version}</version>
+				<configuration>
+					<systemPropertyVariables>
+						<maven.version>${maven.version}</maven.version>
+						<maven.home>${maven.home}</maven.home>
+						<!-- For JenkinsUpdateCenterDockerIT (set by the docker-maven-plugin run). -->
+						<!-- IPv4 (127.0.0.1) on the host side: Artifactory blocks logins when the remote
+							 address is an IPv6 link-local with a zone id (podman port forwarding). -->
+						<artifactory.host.url>http://127.0.0.1:${artifactory.port}/artifactory</artifactory.host.url>
+						<!-- Container side: Jenkins reaches the host-published port via the 'uc-host' gateway
+							 alias and authenticates via the global Authenticator init.groovy.d script. -->
+						<artifactory.network.url>http://uc-host:${artifactory.port}/artifactory</artifactory.network.url>
+						<jenkins.host.url>http://127.0.0.1:${jenkins.port}</jenkins.host.url>
+					</systemPropertyVariables>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>integration-test</goal>
+							<goal>verify</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<plugin>
+				<groupId>io.fabric8</groupId>
+				<artifactId>docker-maven-plugin</artifactId>
+				<version>${docker-maven-plugin.version}</version>
+				<configuration>
+					<autoCreateCustomNetworks>false</autoCreateCustomNetworks>
+					<images>
+						<!-- Artifactory (pulled) for hosting the custom update center. -->
+						<image>
+							<alias>artifactory</alias>
+							<name>releases-docker.jfrog.io/jfrog/artifactory-oss:7.104.14</name>
+							<run>
+								<network>
+									<mode>custom</mode>
+									<name>${it.network.mode}</name>
+								</network>
+								<env>
+									<!-- Fixed throw-away keys so all Artifactory services share one master key
+										 (otherwise the metadata service crash-loops on a missing master.key). -->
+									<JF_SHARED_SECURITY_MASTERKEY>48fc5dad56350455fc5f363aa9cf7d072d8e2a174860546860ff752781ffb509</JF_SHARED_SECURITY_MASTERKEY>
+									<JF_SHARED_SECURITY_JOINKEY>2a947d1180cd0828cbd88b715d054d06b7b1f921ac2647d712378020d27fe49f</JF_SHARED_SECURITY_JOINKEY>
+									<!-- Allow the embedded Derby DB (single-container test, no external PostgreSQL). -->
+									<JF_SHARED_DATABASE_ALLOWNONPOSTGRESQL>true</JF_SHARED_DATABASE_ALLOWNONPOSTGRESQL>
+								</env>
+								<ports>
+									<port>artifactory.port:8081</port>
+								</ports>
+								<wait>
+									<http>
+										<url>http://${docker.host.address}:${artifactory.port}/artifactory/api/system/ping</url>
+										<method>GET</method>
+										<status>200</status>
+									</http>
+									<time>600000</time>
+								</wait>
+								<log>
+									<prefix>ARTIFACTORY</prefix>
+								</log>
+							</run>
+						</image>
+						<!-- Jenkins (built from src/test/docker/jenkins) with the update-sites-manager plugin. -->
+						<image>
+							<alias>jenkins</alias>
+							<name>fuin/jenkins-update-center-it:latest</name>
+							<build>
+								<dockerFileDir>${project.basedir}/src/test/docker/jenkins</dockerFileDir>
+								<!-- RUN steps (jenkins-plugin-cli) need network/DNS during the API-driven build. -->
+								<buildOptions>
+									<networkmode>host</networkmode>
+								</buildOptions>
+							</build>
+							<run>
+								<network>
+									<mode>custom</mode>
+									<name>${it.network.mode}</name>
+								</network>
+								<!-- Reach the host-published Artifactory port from inside the container via the
+									 host gateway (works on both Docker and podman). -->
+								<extraHosts>
+									<host>uc-host:host-gateway</host>
+								</extraHosts>
+								<ports>
+									<port>jenkins.port:8080</port>
+								</ports>
+								<wait>
+									<http>
+										<url>http://${docker.host.address}:${jenkins.port}/login</url>
+										<method>GET</method>
+										<status>200..499</status>
+									</http>
+									<time>300000</time>
+								</wait>
+								<log>
+									<prefix>JENKINS</prefix>
+								</log>
+							</run>
+						</image>
+					</images>
+				</configuration>
+				<executions>
+					<execution>
+						<id>docker-start</id>
+						<phase>pre-integration-test</phase>
+						<goals>
+							<goal>build</goal>
+							<goal>start</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>docker-stop</id>
+						<phase>post-integration-test</phase>
+						<goals>
+							<goal>stop</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+		</plugins>
+
+		<pluginManagement>
+			<plugins>
+				<!--This plugin's configuration is used to store Eclipse m2e settings
+					only. It has no influence on the Maven build itself. -->
+				<plugin>
+					<groupId>org.eclipse.m2e</groupId>
+					<artifactId>lifecycle-mapping</artifactId>
+					<version>1.0.0</version>
+					<configuration>
+						<lifecycleMappingMetadata>
+							<pluginExecutions>
+								<pluginExecution>
+									<pluginExecutionFilter>
+										<groupId>org.apache.maven.plugins</groupId>
+										<artifactId>maven-plugin-plugin</artifactId>
+										<versionRange>[2.9,)</versionRange>
+										<goals>
+											<goal>descriptor</goal>
+										</goals>
+									</pluginExecutionFilter>
+									<action>
+										<execute />
+									</action>
+								</pluginExecution>
+							</pluginExecutions>
+						</lifecycleMappingMetadata>
+					</configuration>
+				</plugin>
+			</plugins>
+		</pluginManagement>
+	</build>
+
+	<profiles>
+		<!-- Local development with rootless podman instead of (rootful) Docker: use the 'pasta'
+			 network mode, which podman tears down cleanly. Run: mvn -Ppodman clean verify -->
+		<profile>
+			<id>podman</id>
+			<properties>
+				<it.network.mode>pasta</it.network.mode>
+			</properties>
+		</profile>
+	</profiles>
+
+</project>

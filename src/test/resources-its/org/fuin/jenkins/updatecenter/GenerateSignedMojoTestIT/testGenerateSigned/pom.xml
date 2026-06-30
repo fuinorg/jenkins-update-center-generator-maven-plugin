@@ -1,0 +1,49 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>org.fuin.jenkins.test</groupId>
+	<artifactId>update-center-signed-test-project</artifactId>
+	<name>Jenkins Update Center Generator Signed Test Example</name>
+	<version>0.0.1</version>
+	<packaging>pom</packaging>
+
+	<dependencies>
+		<!-- Custom Jenkins plugin made available as a local file for the test. -->
+		<dependency>
+			<groupId>org.fuin.jenkins.test</groupId>
+			<artifactId>sample</artifactId>
+			<version>1.0.0</version>
+			<type>hpi</type>
+			<scope>system</scope>
+			<systemPath>${project.basedir}/sample.hpi</systemPath>
+		</dependency>
+	</dependencies>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.fuin</groupId>
+				<artifactId>jenkins-update-center-generator-maven-plugin</artifactId>
+				<version>@project.version@</version>
+				<configuration>
+					<id>fuin</id>
+					<baseUrl>https://repo.example.org/jenkins</baseUrl>
+					<!-- Enable signing with the test key and certificate. -->
+					<privateKey>${project.basedir}/test-signing.key</privateKey>
+					<certificate>${project.basedir}/test-signing.crt</certificate>
+				</configuration>
+				<executions>
+					<execution>
+						<id>generate-update-center</id>
+						<phase>package</phase>
+						<goals>
+							<goal>generate</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+
+</project>

@@ -1,0 +1,4 @@
+<?jelly escape-by-default='true'?>
+<div>
+    Minimal sample plugin used as a fixture for the update center end-to-end integration test.
+</div>

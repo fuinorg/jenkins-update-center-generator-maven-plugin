@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A minimal, REAL Jenkins plugin used only as a fixture for the Docker based end-to-end
+  integration test (profile 'docker-it') of the parent project. It has no dependencies on other
+  plugins so Jenkins can load it stand-alone.
+
+  This project is intentionally NOT part of the reactor of the parent project (the parent uses
+  'maven-plugin' packaging and a different parent POM). Build it explicitly and copy the resulting
+  HPI into the test resources:
+
+    JAVA_HOME=<jdk17> mvn -f src/it/test-plugin/pom.xml -DskipTests clean package
+    cp src/it/test-plugin/target/fuin-sample.hpi \
+       src/test/resources/org/fuin/jenkins/updatecenter/test-plugin.hpi
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<parent>
+		<groupId>org.jenkins-ci.plugins</groupId>
+		<artifactId>plugin</artifactId>
+		<version>4.88</version>
+		<relativePath />
+	</parent>
+
+	<groupId>org.fuin.jenkins.test</groupId>
+	<artifactId>fuin-sample</artifactId>
+	<version>1.0</version>
+	<packaging>hpi</packaging>
+
+	<name>Fuin Sample Plugin</name>
+	<description>Minimal sample plugin for end-to-end update center tests.</description>
+
+	<properties>
+		<!-- Must be &lt;= the Jenkins version of the test container (2.504.x). -->
+		<jenkins.version>2.462.3</jenkins.version>
+		<spotbugs.skip>true</spotbugs.skip>
+	</properties>
+
+	<repositories>
+		<repository>
+			<id>repo.jenkins-ci.org</id>
+			<url>https://repo.jenkins-ci.org/public/</url>
+		</repository>
+	</repositories>
+
+	<pluginRepositories>
+		<pluginRepository>
+			<id>repo.jenkins-ci.org</id>
+			<url>https://repo.jenkins-ci.org/public/</url>
+		</pluginRepository>
+	</pluginRepositories>
+
+</project>
