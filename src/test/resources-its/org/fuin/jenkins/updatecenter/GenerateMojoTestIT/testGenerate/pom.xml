@@ -8,17 +8,13 @@
 	<version>0.0.1</version>
 	<packaging>pom</packaging>
 
-	<dependencies>
-		<!-- Custom Jenkins plugin made available as a local file for the test. -->
-		<dependency>
-			<groupId>org.fuin.jenkins.test</groupId>
-			<artifactId>sample</artifactId>
-			<version>1.0.0</version>
-			<type>hpi</type>
-			<scope>system</scope>
-			<systemPath>${project.basedir}/sample.hpi</systemPath>
-		</dependency>
-	</dependencies>
+	<!-- Custom Jenkins plugin made available through a local file based repository for the test. -->
+	<repositories>
+		<repository>
+			<id>local-fixture-repo</id>
+			<url>file://${project.basedir}/repo</url>
+		</repository>
+	</repositories>
 
 	<build>
 		<plugins>
@@ -32,6 +28,9 @@
 					<baseUrl>https://repo.example.org/jenkins</baseUrl>
 					<downloadUrlPattern>{baseUrl}/{name}/{version}/{fileName}</downloadUrlPattern>
 					<prettyJson>true</prettyJson>
+					<plugins>
+						<plugin>org.fuin.jenkins.test:sample:1.0.0</plugin>
+					</plugins>
 				</configuration>
 				<executions>
 					<execution>

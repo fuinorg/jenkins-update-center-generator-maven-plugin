@@ -17,14 +17,20 @@
  */
 package org.fuin.jenkins.updatecenter;
 
-import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
-import org.apache.maven.plugins.annotations.ResolutionScope;
-import org.apache.maven.project.MavenProject;
+import org.eclipse.aether.RepositorySystem;
+import org.eclipse.aether.RepositorySystemSession;
+import org.eclipse.aether.artifact.Artifact;
+import org.eclipse.aether.artifact.DefaultArtifact;
+import org.eclipse.aether.repository.RemoteRepository;
+import org.eclipse.aether.resolution.ArtifactRequest;
+import org.eclipse.aether.resolution.ArtifactResolutionException;
+import org.eclipse.aether.resolution.ArtifactResult;
 import org.jspecify.annotations.Nullable;
 
 import java.io.File;
@@ -39,26 +45,51 @@ import java.util.function.Function;
 
 /**
  * Generates a Jenkins update center layout (the {@code update-center.json} family of files) for the
- * custom Jenkins plugins declared as {@code hpi} / {@code jpi} dependencies of the project (in
- * {@code compile}, {@code runtime}, {@code provided} or {@code system} scope).
+ * custom Jenkins plugins listed in the {@code plugins} configuration as Maven artifact coordinates.
  * <p>
- * For every such dependency the plugin reads the {@code MANIFEST.MF}, computes the checksums and
- * builds a download URL pointing below a configurable base URL on an internal (non public) server.
- * The result can optionally be signed with a private key and X.509 certificate so that Jenkins
- * accepts the private update site.
+ * Each coordinate is resolved from the configured repositories and the plugin reads its
+ * {@code MANIFEST.MF}, computes the checksums and builds a download URL pointing below a configurable
+ * base URL on an internal (non public) server. The result can optionally be signed with a private
+ * key and X.509 certificate so that Jenkins accepts the private update site.
  */
-@Mojo(name = "generate", defaultPhase = LifecyclePhase.PACKAGE,
-        requiresDependencyResolution = ResolutionScope.COMPILE_PLUS_RUNTIME)
+@Mojo(name = "generate", defaultPhase = LifecyclePhase.PACKAGE)
 public final class GenerateMojo extends AbstractMojo {
 
     private static final Set<String> PLUGIN_TYPES = Set.of("hpi", "jpi");
 
+    private static final String DEFAULT_PLUGIN_TYPE = "hpi";
+
     /**
-     * The current Maven project.
+     * The Maven artifact coordinates of the Jenkins plugins to include in the update center. Each
+     * entry has the form {@code groupId:artifactId:version} with an optional type and classifier
+     * ({@code groupId:artifactId:version[:type[:classifier]]}); the type defaults to {@code hpi}.
+     * The coordinates are resolved from the project's repositories (exactly the listed artifacts,
+     * without transitive resolution).
+     */
+    @Nullable
+    @Parameter(property = "jenkinsuc.plugins")
+    private List<String> plugins;
+
+    /**
+     * Entry point used to resolve the plugin artifacts from the repositories.
      */
     @SuppressWarnings("NullAway.Init") // Injected by Maven
-    @Parameter(defaultValue = "${project}", required = true, readonly = true)
-    private MavenProject project;
+    @Component
+    private RepositorySystem repositorySystem;
+
+    /**
+     * The current repository/network configuration of Maven.
+     */
+    @SuppressWarnings("NullAway.Init") // Injected by Maven
+    @Parameter(defaultValue = "${repositorySystemSession}", readonly = true, required = true)
+    private RepositorySystemSession repositorySession;
+
+    /**
+     * The project's remote repositories to use for resolving the plugin artifacts.
+     */
+    @SuppressWarnings("NullAway.Init") // Injected by Maven
+    @Parameter(defaultValue = "${project.remoteProjectRepositories}", readonly = true, required = true)
+    private List<RemoteRepository> remoteRepositories;
 
     /**
      * Identifier of the generated update center.
@@ -147,9 +178,9 @@ public final class GenerateMojo extends AbstractMojo {
                 ? baseUrl : connectionCheckUrl;
         final UpdateCenterRoot root = new UpdateCenterRoot(id, checkUrl);
 
-        final List<Artifact> pluginArtifacts = collectPluginArtifacts();
+        final List<Artifact> pluginArtifacts = resolvePluginArtifacts();
         if (pluginArtifacts.isEmpty()) {
-            getLog().warn("No 'hpi'/'jpi' dependencies found - generating an empty update center.");
+            getLog().warn("No plugins configured - generating an empty update center.");
         }
 
         for (final Artifact artifact : pluginArtifacts) {
@@ -168,14 +199,54 @@ public final class GenerateMojo extends AbstractMojo {
                 + " plugin(s) in " + outputDirectory + " (signed: " + signer.isConfigured() + ")");
     }
 
-    private List<Artifact> collectPluginArtifacts() {
+    private List<Artifact> resolvePluginArtifacts() throws MojoExecutionException {
         final List<Artifact> result = new ArrayList<>();
-        for (final Artifact artifact : project.getArtifacts()) {
-            if (PLUGIN_TYPES.contains(artifact.getType()) && artifact.getFile() != null) {
-                result.add(artifact);
+        if (plugins == null) {
+            return result;
+        }
+        for (final String coordinate : plugins) {
+            final ArtifactRequest request =
+                    new ArtifactRequest(parseCoordinate(coordinate), remoteRepositories, null);
+            try {
+                final ArtifactResult resolved = repositorySystem.resolveArtifact(repositorySession, request);
+                result.add(resolved.getArtifact());
+            } catch (final ArtifactResolutionException ex) {
+                throw new MojoExecutionException("Failed to resolve plugin '" + coordinate + "'", ex);
             }
         }
         return result;
+    }
+
+    /**
+     * Parses a plugin coordinate of the form {@code groupId:artifactId:version[:type[:classifier]]}
+     * into an artifact to resolve. The type defaults to {@code hpi}.
+     *
+     * @param coordinate Coordinate string as configured.
+     *
+     * @return Artifact to resolve.
+     *
+     * @throws MojoExecutionException The coordinate is malformed or uses an unsupported type.
+     */
+    static Artifact parseCoordinate(final String coordinate) throws MojoExecutionException {
+        final String[] parts = coordinate.trim().split(":");
+        if (parts.length < 3 || parts.length > 5) {
+            throw new MojoExecutionException("Invalid plugin coordinate '" + coordinate
+                    + "', expected 'groupId:artifactId:version[:type[:classifier]]'.");
+        }
+        final String groupId = parts[0];
+        final String artifactId = parts[1];
+        final String version = parts[2];
+        final String type = parts.length >= 4 && !parts[3].isBlank() ? parts[3] : DEFAULT_PLUGIN_TYPE;
+        final String classifier = parts.length == 5 ? parts[4] : "";
+        if (groupId.isBlank() || artifactId.isBlank() || version.isBlank()) {
+            throw new MojoExecutionException("Invalid plugin coordinate '" + coordinate
+                    + "', groupId, artifactId and version must not be empty.");
+        }
+        if (!PLUGIN_TYPES.contains(type)) {
+            throw new MojoExecutionException("Invalid type '" + type + "' in plugin coordinate '"
+                    + coordinate + "', expected one of " + PLUGIN_TYPES + ".");
+        }
+        return new DefaultArtifact(groupId, artifactId, classifier, type, version);
     }
 
     private PluginEntry toEntry(final Artifact artifact) throws MojoExecutionException {

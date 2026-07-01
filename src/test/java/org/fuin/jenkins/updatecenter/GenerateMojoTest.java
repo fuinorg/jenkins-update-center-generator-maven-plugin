@@ -18,6 +18,7 @@
 package org.fuin.jenkins.updatecenter;
 
 import org.apache.maven.plugin.MojoExecutionException;
+import org.eclipse.aether.artifact.Artifact;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -91,6 +92,53 @@ class GenerateMojoTest {
     private static String resolve(final File file, final String envName, final Function<String, String> env)
             throws MojoExecutionException {
         return GenerateMojo.resolvePem(file, envName, "privateKey", "privateKeyEnv", env);
+    }
+
+    @Test
+    void testParseCoordinateDefaultsToHpi() throws Exception {
+        final Artifact artifact = GenerateMojo.parseCoordinate("org.example:my-plugin:1.0.0");
+
+        assertThat(artifact.getGroupId()).isEqualTo("org.example");
+        assertThat(artifact.getArtifactId()).isEqualTo("my-plugin");
+        assertThat(artifact.getVersion()).isEqualTo("1.0.0");
+        assertThat(artifact.getExtension()).isEqualTo("hpi");
+        assertThat(artifact.getClassifier()).isEmpty();
+    }
+
+    @Test
+    void testParseCoordinateWithType() throws Exception {
+        final Artifact artifact = GenerateMojo.parseCoordinate("org.example:my-plugin:1.0.0:jpi");
+
+        assertThat(artifact.getExtension()).isEqualTo("jpi");
+    }
+
+    @Test
+    void testParseCoordinateWithClassifier() throws Exception {
+        final Artifact artifact = GenerateMojo.parseCoordinate("org.example:my-plugin:1.0.0:hpi:special");
+
+        assertThat(artifact.getExtension()).isEqualTo("hpi");
+        assertThat(artifact.getClassifier()).isEqualTo("special");
+    }
+
+    @Test
+    void testParseCoordinateTooFewParts() {
+        assertThatThrownBy(() -> GenerateMojo.parseCoordinate("org.example:my-plugin"))
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("Invalid plugin coordinate");
+    }
+
+    @Test
+    void testParseCoordinateBlankComponent() {
+        assertThatThrownBy(() -> GenerateMojo.parseCoordinate("org.example::1.0.0"))
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("must not be empty");
+    }
+
+    @Test
+    void testParseCoordinateUnsupportedType() {
+        assertThatThrownBy(() -> GenerateMojo.parseCoordinate("org.example:my-plugin:1.0.0:jar"))
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("Invalid type 'jar'");
     }
 
 }

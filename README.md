@@ -12,15 +12,15 @@ are hosted on a private server.
 It is a minimal, self-contained alternative to the
 [`update-center2`](https://github.com/jenkins-infra/update-center2) tool used by the Jenkins project:
 instead of crawling an artifact repository and contacting GitHub, popularity statistics and so on, it
-simply reads the plugins you declare as dependencies, extracts the metadata from their manifest,
-computes the checksums and writes the update center files — optionally digitally signed so Jenkins
-accepts your private update site.
+simply reads the plugins you list by their Maven coordinates, extracts the metadata from their
+manifest, computes the checksums and writes the update center files — optionally digitally signed so
+Jenkins accepts your private update site.
 
 See [changelog](CHANGELOG.md) for release information.
 
 ## What it does
 
-For every `hpi` / `jpi` dependency of the project the plugin:
+For every plugin listed in the `plugins` configuration the plugin:
 
 * reads `META-INF/MANIFEST.MF` (`Short-Name`, `Long-Name`, `Plugin-Version`, `Jenkins-Version`,
   `Plugin-Dependencies`, `Url`, `Compatible-Since-Version`),
@@ -37,22 +37,12 @@ writes three files to the output directory (default `target/update-center`):
 
 ## Usage
 
-Declare your custom plugins as dependencies and bind the `generate` goal:
+List your custom plugins by their Maven coordinates in the `plugins` configuration and bind the
+`generate` goal:
 
 ```xml
 <project>
     ...
-    <dependencies>
-        <!-- Example Jenkins plugin to add to the update center... -->
-        <dependency>
-            <groupId>org.example.jenkins</groupId>
-            <artifactId>my-plugin</artifactId>
-            <version>1.0.0</version>
-            <type>hpi</type>
-        </dependency>
-        <!-- Add more plugins here... -->
-    </dependencies>
-
     <build>
         <plugins>
             <plugin>
@@ -62,6 +52,11 @@ Declare your custom plugins as dependencies and bind the `generate` goal:
                 <configuration>
                     <id>my-update-center</id>
                     <baseUrl>https://repo.example.org/artifactory/jenkins</baseUrl>
+                    <plugins>
+                        <!-- groupId:artifactId:version[:type[:classifier]] (type defaults to hpi) -->
+                        <plugin>org.example.jenkins:my-plugin:1.0.0</plugin>
+                        <!-- Add more plugins here... -->
+                    </plugins>
                 </configuration>
                 <executions>
                     <execution>
@@ -76,12 +71,16 @@ Declare your custom plugins as dependencies and bind the `generate` goal:
 </project>
 ```
 
-Run it with `mvn package` (the goal is bound to the `package` phase by default).
+Run it with `mvn package` (the goal is bound to the `package` phase by default). The listed
+coordinates are resolved from the repositories configured in the project (exactly the artifacts you
+list, without transitive resolution), so each plugin must be available in a reachable Maven
+repository.
 
 ## Configuration
 
 | Parameter            | Property                       | Default                                                | Description                                                                 |
 |----------------------|--------------------------------|--------------------------------------------------------|-----------------------------------------------------------------------------|
+| `plugins`            | `jenkinsuc.plugins`            | *(none)*                                              | Coordinates of the plugins to include: `groupId:artifactId:version[:type[:classifier]]` (type defaults to `hpi`), one `<plugin>` per entry. |
 | `id`                 | `jenkinsuc.id`                 | *(required)*                                           | Identifier of the update center.                                            |
 | `baseUrl`            | `jenkinsuc.baseUrl`            | *(required)*                                           | Base URL below which the plugin files are located.                         |
 | `downloadUrlPattern` | `jenkinsuc.downloadUrlPattern` | `{baseUrl}/{name}/{version}/{name}.hpi`                | Template for each download URL (see placeholders below).                    |

@@ -56,9 +56,10 @@ class GenerateMojoTestIT {
         final String json = Files.readString(actual.toPath());
         Assertions.assertThat(json).contains("\"id\":\"fuin\"");
         Assertions.assertThat(json).contains("\"name\":\"sample\"");
-        // The custom baseUrl + downloadUrlPattern must be honored.
+        // The custom baseUrl + downloadUrlPattern must be honored. The {fileName} placeholder
+        // resolves to the repository file name of the artifact (<artifactId>-<version>.<type>).
         Assertions.assertThat(json)
-                .contains("https://repo.example.org/jenkins/sample/1.0.0/sample.hpi");
+                .contains("https://repo.example.org/jenkins/sample/1.0.0/sample-1.0.0.hpi");
     }
 
 }
