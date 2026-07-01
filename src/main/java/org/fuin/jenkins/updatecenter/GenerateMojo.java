@@ -29,10 +29,13 @@ import org.jspecify.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Generates a Jenkins update center layout (the {@code update-center.json} family of files) for the
@@ -119,6 +122,24 @@ public final class GenerateMojo extends AbstractMojo {
     @Parameter(property = "jenkinsuc.certificate")
     private File certificate;
 
+    /**
+     * Name of an environment variable whose value is the PEM encoded RSA private key used to sign
+     * the update center JSON. Mutually exclusive with {@link #privateKey}. Useful in CI to avoid
+     * writing the secret key to disk.
+     */
+    @Nullable
+    @Parameter(property = "jenkinsuc.privateKeyEnv")
+    private String privateKeyEnv;
+
+    /**
+     * Name of an environment variable whose value is the PEM encoded X.509 certificate (optionally a
+     * chain, signer certificate first) matching the private key. Mutually exclusive with
+     * {@link #certificate}.
+     */
+    @Nullable
+    @Parameter(property = "jenkinsuc.certificateEnv")
+    private String certificateEnv;
+
     @Override
     public void execute() throws MojoExecutionException {
 
@@ -179,16 +200,63 @@ public final class GenerateMojo extends AbstractMojo {
     }
 
     private Signer createSigner() throws MojoExecutionException {
-        final boolean hasKey = privateKey != null;
-        final boolean hasCert = certificate != null;
+        final String keyPem = resolvePem(privateKey, privateKeyEnv, "privateKey", "privateKeyEnv", System::getenv);
+        final String certPem = resolvePem(certificate, certificateEnv, "certificate", "certificateEnv", System::getenv);
+        final boolean hasKey = keyPem != null;
+        final boolean hasCert = certPem != null;
         if (hasKey != hasCert) {
+            throw new MojoExecutionException("Both a private key (via 'privateKey' or 'privateKeyEnv') and a "
+                    + "certificate (via 'certificate' or 'certificateEnv') must be specified to enable signing "
+                    + "(or neither).");
+        }
+        return new Signer(keyPem, certPem);
+    }
+
+    /**
+     * Resolves a PEM source that may be given either as a file or via the name of an environment
+     * variable holding the PEM text. At most one of the two may be set.
+     *
+     * @param file      File parameter value, or {@code null} if not set.
+     * @param envName   Name of the environment variable to read, or {@code null} if not set.
+     * @param fileParam Name of the file parameter (for error messages).
+     * @param envParam  Name of the environment variable parameter (for error messages).
+     * @param env       Environment lookup (injected so the logic is testable without a real
+     *                  environment); returns the variable's value or {@code null} if unset.
+     *
+     * @return The PEM text, or {@code null} if neither source is set.
+     *
+     * @throws MojoExecutionException Both sources are set, the file cannot be read, or the referenced
+     *                                environment variable is unset or empty.
+     */
+    @Nullable
+    static String resolvePem(@Nullable final File file, @Nullable final String envName,
+            final String fileParam, final String envParam,
+            final Function<String, @Nullable String> env) throws MojoExecutionException {
+
+        if (file != null && envName != null) {
             throw new MojoExecutionException(
-                    "Both 'privateKey' and 'certificate' must be specified to enable signing (or neither).");
+                    "Only one of '" + fileParam + "' or '" + envParam + "' may be specified, not both.");
         }
-        if (!hasKey) {
-            return new Signer();
+        if (file != null) {
+            try {
+                return Files.readString(file.toPath(), StandardCharsets.UTF_8);
+            } catch (final IOException ex) {
+                throw new MojoExecutionException("Failed to read '" + fileParam + "' from " + file, ex);
+            }
         }
-        return new Signer(privateKey, List.of(certificate));
+        if (envName != null) {
+            final String value = env.apply(envName);
+            if (value == null) {
+                throw new MojoExecutionException("Environment variable '" + envName
+                        + "' referenced by '" + envParam + "' is not set.");
+            }
+            if (value.isBlank()) {
+                throw new MojoExecutionException("Environment variable '" + envName
+                        + "' referenced by '" + envParam + "' is empty.");
+            }
+            return value;
+        }
+        return null;
     }
 
 }

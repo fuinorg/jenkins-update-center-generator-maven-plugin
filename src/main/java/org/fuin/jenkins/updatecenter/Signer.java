@@ -24,12 +24,11 @@ import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
 import org.jspecify.annotations.Nullable;
 
-import java.io.File;
-import java.io.FileInputStream;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
@@ -43,8 +42,8 @@ import java.util.Base64;
 import java.util.List;
 
 /**
- * Creates the {@link JsonSignature} for an update center JSON document. Signing requires a PEM
- * encoded RSA private key and the matching X.509 certificate (optionally followed by intermediate
+ * Creates the {@link JsonSignature} for an update center JSON document. Signing requires the PEM
+ * text of an RSA private key and the matching X.509 certificate (optionally followed by intermediate
  * certificates of the chain). When neither is configured the document is left unsigned.
  * <p>
  * The digest/signature algorithms and encodings match exactly what Jenkins expects when verifying
@@ -57,42 +56,44 @@ public final class Signer {
     }
 
     @Nullable
-    private final File privateKey;
+    private final String privateKeyPem;
 
-    private final List<File> certificates;
+    @Nullable
+    private final String certificatePem;
 
     /**
      * Constructor for an unsigned generator (no key, no certificate).
      */
     public Signer() {
-        this(null, new ArrayList<>());
+        this(null, null);
     }
 
     /**
      * Constructor with private key and certificate chain.
      *
-     * @param privateKey   PEM encoded RSA private key or {@code null} to disable signing.
-     * @param certificates X.509 certificate chain (signer certificate first); may be empty to
-     *                     disable signing.
+     * @param privateKeyPem  PEM encoded RSA private key text, or {@code null} to disable signing.
+     * @param certificatePem PEM encoded X.509 certificate text (signer certificate first, optionally
+     *                       followed by intermediate certificates of the chain), or {@code null} to
+     *                       disable signing.
      */
-    public Signer(@Nullable final File privateKey, final List<File> certificates) {
-        this.privateKey = privateKey;
-        this.certificates = certificates;
+    public Signer(@Nullable final String privateKeyPem, @Nullable final String certificatePem) {
+        this.privateKeyPem = privateKeyPem;
+        this.certificatePem = certificatePem;
     }
 
     /**
      * Checks whether the signer is configured to actually create a signature.
      *
-     * @return {@code true} if both a private key and at least one certificate are set.
+     * @return {@code true} if both a private key and a certificate are set.
      *
      * @throws IllegalStateException Only one of private key / certificate is set.
      */
     public boolean isConfigured() {
-        if (privateKey != null && !certificates.isEmpty()) {
+        if (privateKeyPem != null && certificatePem != null) {
             return true;
         }
-        if (privateKey != null || !certificates.isEmpty()) {
-            throw new IllegalStateException("Both 'privateKey' and 'certificate' must be specified for signing");
+        if (privateKeyPem != null || certificatePem != null) {
+            throw new IllegalStateException("Both a private key and a certificate must be specified for signing");
         }
         return false;
     }
@@ -164,7 +165,7 @@ public final class Signer {
     }
 
     private PrivateKey loadPrivateKey() throws IOException {
-        try (PEMParser pem = new PEMParser(Files.newBufferedReader(privateKey.toPath(), StandardCharsets.UTF_8))) {
+        try (PEMParser pem = new PEMParser(new StringReader(privateKeyPem))) {
             final Object obj = pem.readObject();
             final JcaPEMKeyConverter converter = new JcaPEMKeyConverter();
             if (obj instanceof PrivateKeyInfo info) {
@@ -173,7 +174,7 @@ public final class Signer {
             if (obj instanceof PEMKeyPair pair) {
                 return converter.getKeyPair(pair).getPrivate();
             }
-            throw new IOException("Unexpected type for private key in " + privateKey + ": "
+            throw new IOException("Unexpected type for private key: "
                     + (obj == null ? "null" : obj.getClass().getName()));
         }
     }
@@ -181,18 +182,16 @@ public final class Signer {
     private List<X509Certificate> loadCertificateChain() throws GeneralSecurityException, IOException {
         final CertificateFactory cf = CertificateFactory.getInstance("X.509");
         final List<X509Certificate> result = new ArrayList<>();
-        for (final File file : certificates) {
-            try (InputStream in = new FileInputStream(file)) {
-                // A single file may contain a whole chain (signer certificate first).
-                for (final java.security.cert.Certificate cert : cf.generateCertificates(in)) {
-                    final X509Certificate x509 = (X509Certificate) cert;
-                    x509.checkValidity();
-                    result.add(x509);
-                }
+        try (InputStream in = new ByteArrayInputStream(certificatePem.getBytes(StandardCharsets.UTF_8))) {
+            // A single source may contain a whole chain (signer certificate first).
+            for (final java.security.cert.Certificate cert : cf.generateCertificates(in)) {
+                final X509Certificate x509 = (X509Certificate) cert;
+                x509.checkValidity();
+                result.add(x509);
             }
         }
         if (result.isEmpty()) {
-            throw new GeneralSecurityException("No X.509 certificate found in: " + certificates);
+            throw new GeneralSecurityException("No X.509 certificate found in the configured certificate");
         }
         return result;
     }

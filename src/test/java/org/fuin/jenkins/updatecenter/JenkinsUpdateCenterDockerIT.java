@@ -35,7 +35,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Base64;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -88,13 +87,15 @@ class JenkinsUpdateCenterDockerIT {
         waitForStatus(jenkinsHostUrl + "/login", 200, 499, Duration.ofMinutes(3));
 
         // --- 2. Generate the signed update center pointing at the CONTAINER-side Artifactory URL ---
-        final File keyFile = new File(getClass().getResource("test-signing.key").toURI());
-        final File certFile = new File(getClass().getResource("test-signing.crt").toURI());
+        final String keyPem = Files.readString(
+                Path.of(getClass().getResource("test-signing.key").toURI()), StandardCharsets.UTF_8);
+        final String certPem = Files.readString(
+                Path.of(getClass().getResource("test-signing.crt").toURI()), StandardCharsets.UTF_8);
         final String base = artifactoryNetworkUrl + "/" + REPO + "/jenkins";
         final UpdateCenterRoot root = new UpdateCenterRoot("fuin", artifactoryNetworkUrl + "/" + REPO);
         root.addPlugin(new PluginEntry(hpi, base + "/" + PLUGIN_NAME + "/" + version + "/" + PLUGIN_NAME + ".hpi"));
         final File genDir = Files.createTempDirectory("uc-it").toFile();
-        root.writeTo(genDir, new Signer(keyFile, List.of(certFile)), true);
+        root.writeTo(genDir, new Signer(keyPem, certPem), true);
         final byte[] updateCenterJsonp = Files.readAllBytes(
                 new File(genDir, UpdateCenterRoot.UPDATE_CENTER_JSON).toPath());
 

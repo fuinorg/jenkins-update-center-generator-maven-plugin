@@ -40,7 +40,6 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Base64;
 import java.util.Date;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -91,18 +90,14 @@ class UpdateCenterRootTest {
 
     @Test
     void testWriteSignedAndVerifyLikeJenkins(@TempDir final File dir) throws Exception {
-        // Create a throw-away RSA key + self-signed certificate and write them as PEM files.
+        // Create a throw-away RSA key + self-signed certificate as in-memory PEM text.
         final KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
         kpg.initialize(2048);
         final KeyPair keyPair = kpg.generateKeyPair();
         final X509Certificate cert = selfSignedCertificate(keyPair);
 
-        final File keyFile = new File(dir, "test.key");
-        final File certFile = new File(dir, "test.crt");
-        writePem(keyFile, "PRIVATE KEY", keyPair.getPrivate().getEncoded());
-        writePem(certFile, "CERTIFICATE", cert.getEncoded());
-
-        final Signer signer = new Signer(keyFile, List.of(certFile));
+        final Signer signer = new Signer(toPem("PRIVATE KEY", keyPair.getPrivate().getEncoded()),
+                toPem("CERTIFICATE", cert.getEncoded()));
         assertThat(signer.isConfigured()).isTrue();
 
         // Write compact so the file equals "unsigned + signature inserted".
@@ -144,13 +139,10 @@ class UpdateCenterRootTest {
         kpg.initialize(2048);
         final KeyPair keyPair = kpg.generateKeyPair();
         final X509Certificate cert = selfSignedCertificate(keyPair);
-        final File keyFile = new File(dir, "test.key");
-        final File certFile = new File(dir, "test.crt");
-        writePem(keyFile, "PRIVATE KEY", keyPair.getPrivate().getEncoded());
-        writePem(certFile, "CERTIFICATE", cert.getEncoded());
 
         // Pretty output must still verify (digest is computed over the compact stripped form).
-        rootWithSample().writeTo(dir, new Signer(keyFile, List.of(certFile)), true);
+        rootWithSample().writeTo(dir, new Signer(toPem("PRIVATE KEY", keyPair.getPrivate().getEncoded()),
+                toPem("CERTIFICATE", cert.getEncoded())), true);
 
         final net.sf.json.JSONObject o = net.sf.json.JSONObject.fromObject(Files.readString(
                 new File(dir, UpdateCenterRoot.UPDATE_CENTER_ACTUAL_JSON).toPath()));
@@ -188,11 +180,10 @@ class UpdateCenterRootTest {
         return signature.verify(sig);
     }
 
-    private static void writePem(final File file, final String type, final byte[] der) throws Exception {
-        final String pem = "-----BEGIN " + type + "-----\n"
+    private static String toPem(final String type, final byte[] der) {
+        return "-----BEGIN " + type + "-----\n"
                 + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII)).encodeToString(der)
                 + "\n-----END " + type + "-----\n";
-        Files.writeString(file.toPath(), pem, StandardCharsets.US_ASCII);
     }
 
     private static String toHex(final byte[] bytes) {

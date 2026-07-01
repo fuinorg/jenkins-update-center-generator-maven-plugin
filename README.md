@@ -16,6 +16,8 @@ simply reads the plugins you declare as dependencies, extracts the metadata from
 computes the checksums and writes the update center files — optionally digitally signed so Jenkins
 accepts your private update site.
 
+See [changelog](CHANGELOG.md) for release information.
+
 ## What it does
 
 For every `hpi` / `jpi` dependency of the project the plugin:
@@ -86,8 +88,10 @@ Run it with `mvn package` (the goal is bound to the `package` phase by default).
 | `connectionCheckUrl` | `jenkinsuc.connectionCheckUrl` | value of `baseUrl`                                     | URL Jenkins uses to check connectivity.                                    |
 | `outputDirectory`    | `jenkinsuc.outputDirectory`    | `${project.build.directory}/update-center`            | Directory the files are written to.                                        |
 | `prettyJson`         | `jenkinsuc.prettyJson`         | `true`                                                 | Whether to pretty-print the JSON.                                          |
-| `privateKey`         | `jenkinsuc.privateKey`         | *(none)*                                               | PEM encoded RSA private key for signing.                                   |
-| `certificate`        | `jenkinsuc.certificate`        | *(none)*                                               | PEM encoded X.509 certificate (chain) matching the private key.            |
+| `privateKey`         | `jenkinsuc.privateKey`         | *(none)*                                               | PEM encoded RSA private key file for signing.                              |
+| `certificate`        | `jenkinsuc.certificate`        | *(none)*                                               | PEM encoded X.509 certificate (chain) file matching the private key.       |
+| `privateKeyEnv`      | `jenkinsuc.privateKeyEnv`      | *(none)*                                               | Name of an env var holding the PEM private key (instead of `privateKey`).  |
+| `certificateEnv`     | `jenkinsuc.certificateEnv`     | *(none)*                                               | Name of an env var holding the PEM certificate (instead of `certificate`). |
 
 ### URL layout
 
@@ -118,6 +122,25 @@ Jenkins trusts. Provide a key and certificate:
 When both are set the `signature` block is added to the JSON (SHA-1/SHA-512 digests and
 SHA1withRSA/SHA512withRSA signatures plus the Base64 encoded certificate chain). When neither is
 set the output is left unsigned.
+
+### Passing key and certificate via environment variables
+
+To avoid writing signing secrets to disk (e.g. in CI), the key and/or certificate can instead be
+supplied through environment variables. Set `privateKeyEnv` / `certificateEnv` to the *names* of the
+environment variables; their values must be the raw PEM text (the exact content the file would hold,
+including the `-----BEGIN ...-----` markers):
+
+```xml
+<configuration>
+    <id>my-update-center</id>
+    <privateKeyEnv>JENKINS_UC_KEY</privateKeyEnv>
+    <certificateEnv>JENKINS_UC_CERT</certificateEnv>
+</configuration>
+```
+
+For each side, provide either the file parameter or the `*Env` parameter, not both (the two sides
+may be mixed, e.g. a file key with an env certificate). Referencing an env variable that is unset or
+empty fails the build.
 
 A development certificate can be created with OpenSSL:
 
