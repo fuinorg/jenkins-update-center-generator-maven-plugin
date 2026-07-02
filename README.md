@@ -48,7 +48,7 @@ List your custom plugins by their Maven coordinates in the `plugins` configurati
             <plugin>
                 <groupId>org.fuin</groupId>
                 <artifactId>jenkins-update-center-generator-maven-plugin</artifactId>
-                <version>1.0.0</version>
+                <version>1.0.1-SNAPSHOT</version>
                 <configuration>
                     <id>my-update-center</id>
                     <baseUrl>https://repo.example.org/artifactory/jenkins</baseUrl>

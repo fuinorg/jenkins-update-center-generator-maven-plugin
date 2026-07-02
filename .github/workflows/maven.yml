@@ -27,7 +27,7 @@ jobs:
 
     steps:
     - name: Checkout source
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
@@ -42,7 +42,7 @@ jobs:
       run: java -version && ./mvnw -version && docker version
 
     - name: Cache Maven packages
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ~/.m2
         key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
@@ -51,7 +51,7 @@ jobs:
     # Cache the (large) base images the integration test starts via the docker-maven-plugin, so they
     # are not re-pulled from the registries on every run. Keyed on the pinned image tags.
     - name: Cache Docker base images
-      uses: actions/cache@v5
+      uses: actions/cache@v6
       with:
         path: ~/docker-images
         key: docker-images-artifactory-7.104.14-jenkins-2.504.3-jdk17
@@ -96,7 +96,7 @@ jobs:
     # error), including the exact flattened POM that gets uploaded to the repository.
     - name: Upload build artifacts
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: build-artifacts
         path: |

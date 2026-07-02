@@ -11,7 +11,7 @@
 	</parent>
 
 	<artifactId>jenkins-update-center-generator-maven-plugin</artifactId>
-	<version>1.0.0</version>
+	<version>1.0.1-SNAPSHOT</version>
 	<packaging>maven-plugin</packaging>
 	<name>Jenkins Update Center Generator Maven Plugin</name>
 	<description>Generates a Jenkins update center layout (update-center.json) for custom plugins hosted on an internal server (Maven Plugin)</description>
