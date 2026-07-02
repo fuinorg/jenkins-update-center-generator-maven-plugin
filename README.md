@@ -78,19 +78,19 @@ repository.
 
 ## Configuration
 
-| Parameter            | Property                       | Default                                                | Description                                                                 |
-|----------------------|--------------------------------|--------------------------------------------------------|-----------------------------------------------------------------------------|
+| Parameter            | Property                       | Default                                                | Description                                                                                                                                 |
+|----------------------|--------------------------------|--------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
 | `plugins`            | `jenkinsuc.plugins`            | *(none)*                                              | Coordinates of the plugins to include: `groupId:artifactId:version[:type[:classifier]]` (type defaults to `hpi`), one `<plugin>` per entry. |
-| `id`                 | `jenkinsuc.id`                 | *(required)*                                           | Identifier of the update center.                                            |
-| `baseUrl`            | `jenkinsuc.baseUrl`            | *(required)*                                           | Base URL below which the plugin files are located.                         |
-| `downloadUrlPattern` | `jenkinsuc.downloadUrlPattern` | `{baseUrl}/{name}/{version}/{name}.hpi`                | Template for each download URL (see placeholders below).                    |
-| `connectionCheckUrl` | `jenkinsuc.connectionCheckUrl` | value of `baseUrl`                                     | URL Jenkins uses to check connectivity.                                    |
-| `outputDirectory`    | `jenkinsuc.outputDirectory`    | `${project.build.directory}/update-center`            | Directory the files are written to.                                        |
-| `prettyJson`         | `jenkinsuc.prettyJson`         | `true`                                                 | Whether to pretty-print the JSON.                                          |
-| `privateKey`         | `jenkinsuc.privateKey`         | *(none)*                                               | PEM encoded RSA private key file for signing.                              |
-| `certificate`        | `jenkinsuc.certificate`        | *(none)*                                               | PEM encoded X.509 certificate (chain) file matching the private key.       |
-| `privateKeyEnv`      | `jenkinsuc.privateKeyEnv`      | *(none)*                                               | Name of an env var holding the PEM private key (instead of `privateKey`).  |
-| `certificateEnv`     | `jenkinsuc.certificateEnv`     | *(none)*                                               | Name of an env var holding the PEM certificate (instead of `certificate`). |
+| `id`                 | `jenkinsuc.id`                 | *(required)*                                           | Identifier of the update center.                                                                                                            |
+| `baseUrl`            | `jenkinsuc.baseUrl`            | *(required)*                                           | Base URL below which the plugin files are located.                                                                                          |
+| `downloadUrlPattern` | `jenkinsuc.downloadUrlPattern` | `{baseUrl}/{name}/{version}/{name}.hpi`                | Template for each download URL where Jenkins finds the plugins (see placeholders below).                                                    |
+| `connectionCheckUrl` | `jenkinsuc.connectionCheckUrl` | value of `baseUrl`                                     | URL Jenkins uses to check connectivity.                                                                                                     |
+| `outputDirectory`    | `jenkinsuc.outputDirectory`    | `${project.build.directory}/update-center`            | Directory the files are written to.                                                                                                         |
+| `prettyJson`         | `jenkinsuc.prettyJson`         | `true`                                                 | Whether to pretty-print the JSON.                                                                                                           |
+| `privateKey`         | `jenkinsuc.privateKey`         | *(none)*                                               | PEM encoded RSA private key file for signing.                                                                                               |
+| `certificate`        | `jenkinsuc.certificate`        | *(none)*                                               | PEM encoded X.509 certificate (chain) file matching the private key.                                                                        |
+| `privateKeyEnv`      | `jenkinsuc.privateKeyEnv`      | *(none)*                                               | Name of an env var holding the PEM private key (instead of `privateKey`).                                                                   |
+| `certificateEnv`     | `jenkinsuc.certificateEnv`     | *(none)*                                               | Name of an env var holding the PEM certificate (instead of `certificate`).                                                                  |
 
 ### URL layout
 
@@ -102,8 +102,14 @@ placeholders:
 * `{version}` — the plugin version
 * `{fileName}` — the file name of the resolved artifact
 
+The expanded URL is written into the generated update center metadata as each plugin's download
+URL. Jenkins uses it later, at plugin install/update time, to download the actual artifact via a
+plain HTTP(S) request (and then verifies it against the checksums and signature in the metadata).
+It must therefore point at a directly reachable location of the `.hpi`/plugin file.
+
 With a `baseUrl` of `https://repo.example.org/artifactory/jenkins` and the default pattern, a plugin
-`git` version `5.2.1` resolves to `https://repo.example.org/artifactory/jenkins/git/5.2.1/git.hpi`.
+`my-cool-jenkins-plugin` version `5.2.1` resolves to
+`https://repo.example.org/artifactory/jenkins/my-cool-jenkins-plugin/5.2.1/my-cool-jenkins-plugin.hpi`.
 
 ## Signing
 
@@ -153,6 +159,41 @@ For Jenkins to trust a self-signed/private root, copy the certificate into the d
 `update-center-rootCAs/` inside the Jenkins home directory (create it if necessary) and restart
 Jenkins. Then configure the update site URL (e.g. `https://.../update-center.json` or a `file://`
 URL) under *Manage Jenkins » Plugins » Advanced settings*.
+
+## Deploying a Jenkins plugin SNAPSHOT
+Unfortunately the Jenkins [maven-hpi-plugin](https://github.com/jenkinsci/maven-hpi-plugin) has a
+strange mechanism of adding text postfixes for snapshot version. To provide a proper version, it's best
+to use Maven's build timestamp as snapshot identifier instead of "-SNAPSHOT", which will lead to trouble.
+
+```xml
+<properties>
+    <!-- Compact, ordering-friendly build timestamp (e.g. 20260703.083000) used to build a
+         suffix-free, monotonically increasing plugin version in the maven-hpi-plugin config below. -->
+    <maven.build.timestamp.format>yyyyMMdd.HHmmss</maven.build.timestamp.format>
+    <!-- Single source of truth for the published plugin version. It is baked into the HPI's
+         Plugin-Version manifest attribute (via snapshotPluginVersionOverride), which the update
+         center generator copies into update-center.json and into the {version} segment of the
+         download URL. The wagon upload therefore must publish the HPI under this same version so
+         the URL advertised in update-center.json actually resolves. -->
+    <hpi.publish.version>1.0.0-${maven.build.timestamp}</hpi.publish.version>
+</properties>
+```
+
+Then configure the plugin like this:
+
+```xml
+<plugin>
+    <groupId>org.jenkins-ci.tools</groupId>
+    <artifactId>maven-hpi-plugin</artifactId>
+    <configuration>
+        <snapshotPluginVersionOverride>${hpi.publish.version}</snapshotPluginVersionOverride>
+    </configuration>
+</plugin>
+```
+
+Don't forget to configure your wagon plugin (or whatever you use to upload the HPI files) 
+to use also the `hpi.publish.version` version to match the path inside the generated update
+center JSON.
 
 ## Building
 
